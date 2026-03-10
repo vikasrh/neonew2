@@ -1,18 +1,23 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
-import streamlit as st
 import plotly.express as px
+import streamlit as st
 
 DB_PATH = "neo.db"
 PRED_TABLE = "neo_predictions"
 RUNS_TABLE = "pipeline_runs"
 AUTO_REFRESH_SECONDS = 60
+PIPELINE_INTERVAL_SECONDS = 3600
 
 st.set_page_config(page_title="NEO Risk Dashboard", layout="wide")
 st.title("Near-Earth Object Risk Dashboard")
 st.caption("Railway worker fetches NASA NEO data, retrains the models, and refreshes predictions every hour.")
+st.markdown(
+    f"<meta http-equiv='refresh' content='{AUTO_REFRESH_SECONDS}'>",
+    unsafe_allow_html=True,
+)
 
 
 @st.cache_data(ttl=AUTO_REFRESH_SECONDS)
@@ -36,14 +41,25 @@ def load_latest_run() -> pd.DataFrame:
 df = load_predictions()
 latest_run_df = load_latest_run()
 latest_run = latest_run_df.iloc[0] if not latest_run_df.empty else None
+latest_prediction_time = None
+last_run_time = None
+next_run_time = None
 
-status_cols = st.columns(4)
+if latest_run is not None and latest_run.get("run_time_utc"):
+    last_run_time = datetime.fromisoformat(str(latest_run["run_time_utc"]))
+    next_run_time = last_run_time + timedelta(seconds=PIPELINE_INTERVAL_SECONDS)
+
+if not df.empty and "prediction_time_utc" in df.columns:
+    latest_prediction_value = pd.to_datetime(df["prediction_time_utc"], errors="coerce").max()
+    if pd.notna(latest_prediction_value):
+        latest_prediction_time = latest_prediction_value.to_pydatetime()
+
+status_cols = st.columns(5)
 with status_cols[0]:
-    if latest_run is not None and latest_run.get("run_time_utc"):
-        run_time = datetime.fromisoformat(str(latest_run["run_time_utc"]))
-        st.metric("Last Pipeline Run", run_time.strftime("%Y-%m-%d %H:%M UTC"))
-    else:
-        st.metric("Last Pipeline Run", "No runs yet")
+    st.metric(
+        "Last Pipeline Run",
+        last_run_time.strftime("%Y-%m-%d %H:%M UTC") if last_run_time else "No runs yet",
+    )
 
 with status_cols[1]:
     st.metric("Pipeline Status", str(latest_run["status"]).upper() if latest_run is not None else "UNKNOWN")
@@ -53,6 +69,22 @@ with status_cols[2]:
 
 with status_cols[3]:
     st.metric("Predicted Rows", int(latest_run["predicted_rows"]) if latest_run is not None else 0)
+
+with status_cols[4]:
+    st.metric(
+        "Next Expected Run",
+        next_run_time.strftime("%Y-%m-%d %H:%M UTC") if next_run_time else "Unknown",
+    )
+
+info_cols = st.columns(2)
+with info_cols[0]:
+    st.caption(
+        f"Latest prediction timestamp: {latest_prediction_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        if latest_prediction_time
+        else "Latest prediction timestamp: unavailable"
+    )
+with info_cols[1]:
+    st.caption(f"Dashboard auto-refresh: every {AUTO_REFRESH_SECONDS} seconds")
 
 if latest_run is not None and str(latest_run.get("status", "")).lower() != "ok":
     st.error(f"Latest pipeline run failed: {latest_run.get('error', 'Unknown error')}")
@@ -100,7 +132,6 @@ st.subheader("Risk score distribution")
 fig_hist = px.histogram(df_f, x="risk_score", nbins=30, color="risk_label" if "risk_label" in df_f.columns else None)
 st.plotly_chart(fig_hist, use_container_width=True)
 
-# Risk over time (date)
 if df_f["date_parsed"].notna().any():
     tmp = df_f.dropna(subset=["date_parsed"]).sort_values("date_parsed")
     st.subheader("Risk score over date")
@@ -112,7 +143,6 @@ if df_f["date_parsed"].notna().any():
     )
     st.plotly_chart(fig_line, use_container_width=True)
 
-# Scatter: miss distance vs diameter
 if "miss_distance_km" in df_f.columns and "diameter_m" in df_f.columns:
     st.subheader("Miss distance vs Diameter (colored by risk)")
     fig_scatter = px.scatter(
@@ -124,7 +154,6 @@ if "miss_distance_km" in df_f.columns and "diameter_m" in df_f.columns:
     )
     st.plotly_chart(fig_scatter, use_container_width=True)
 
-# Table
 st.subheader("Top risky objects")
 cols = [
     c
