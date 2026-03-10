@@ -20,7 +20,7 @@ AUTO_REFRESH_SECONDS = 30  # Auto-refresh every 30 seconds
 # Page config
 st.set_page_config(
     page_title="NEO Risk Dashboard",
-    page_icon="☄️",
+    page_icon="â˜„ï¸",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -48,7 +48,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Title and description
-st.title("☄️ Near-Earth Object Risk Assessment Dashboard")
+st.title("â˜„ï¸ Near-Earth Object Risk Assessment Dashboard")
 st.markdown("""
 **Real-time monitoring and risk assessment of Near-Earth Objects using Machine Learning**
 
@@ -93,15 +93,15 @@ col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
     if db_stats['last_update']:
         last_update = datetime.fromisoformat(db_stats['last_update'])
-        st.caption(f"📊 Last updated: {last_update.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        st.caption(f"ðŸ“Š Last updated: {last_update.strftime('%Y-%m-%d %H:%M:%S UTC')}")
     else:
-        st.caption("📊 No data available yet")
+        st.caption("ðŸ“Š No data available yet")
 
 with col2:
-    st.caption(f"🗃️ Total records: {db_stats['total_records']:,}")
+    st.caption(f"ðŸ—ƒï¸ Total records: {db_stats['total_records']:,}")
 
 with col3:
-    if st.button("🔄 Refresh Now"):
+    if st.button("ðŸ”„ Refresh Now"):
         st.cache_data.clear()
         st.rerun()
 
@@ -130,7 +130,7 @@ else:
     df["date_parsed"] = pd.NaT
 
 # Sidebar filters
-st.sidebar.header("🎛️ Filters")
+st.sidebar.header("ðŸŽ›ï¸ Filters")
 
 # Risk score range
 min_score = float(df["risk_score"].min())
@@ -190,7 +190,7 @@ if df["date_parsed"].notna().any() and len(date_range) == 2:
     ]
 
 # Key Performance Indicators
-st.header("📈 Key Metrics")
+st.header("ðŸ“ˆ Key Metrics")
 kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 
 with kpi1:
@@ -203,7 +203,7 @@ with kpi1:
 with kpi2:
     high_risk_count = int((df_filtered["risk_label"] == "HIGH").sum()) if "risk_label" in df_filtered.columns else 0
     st.metric(
-        "🔴 High Risk",
+        "ðŸ”´ High Risk",
         high_risk_count,
         help="NEOs classified as HIGH risk"
     )
@@ -211,7 +211,7 @@ with kpi2:
 with kpi3:
     anomaly_count = int(df_filtered["is_anomaly"].sum()) if "is_anomaly" in df_filtered.columns else 0
     st.metric(
-        "⚠️ Anomalies",
+        "âš ï¸ Anomalies",
         anomaly_count,
         help="NEOs flagged as anomalous by Isolation Forest"
     )
@@ -233,7 +233,7 @@ with kpi5:
     )
 
 # Visualizations
-st.header("📊 Risk Analysis")
+st.header("ðŸ“Š Risk Analysis")
 
 # Row 1: Risk distribution and model comparison
 viz_col1, viz_col2 = st.columns(2)
@@ -253,7 +253,7 @@ with viz_col1:
         yaxis_title="Count",
         showlegend=True
     )
-    st.plotly_chart(fig_hist, width="stretch")
+    st.plotly_chart(fig_hist, use_container_width=True)
 
 with viz_col2:
     st.subheader("Model Comparison: XGBoost vs Isolation Forest")
@@ -274,13 +274,13 @@ with viz_col2:
             xaxis_title="XGBoost Risk Probability",
             yaxis_title="Isolation Forest Anomaly Score"
         )
-        st.plotly_chart(fig_scatter_models, width="stretch")
+        st.plotly_chart(fig_scatter_models, use_container_width=True)
     else:
         st.info("Model comparison requires both XGBoost and Isolation Forest scores")
 
 # Row 2: Time series analysis
 if df_filtered["date_parsed"].notna().any():
-    st.subheader("📅 Risk Score Over Time")
+    st.subheader("ðŸ“… Risk Score Over Time")
     
     tmp = df_filtered.dropna(subset=["date_parsed"]).sort_values("date_parsed")
     
@@ -316,10 +316,10 @@ if df_filtered["date_parsed"].notna().any():
         showlegend=True
     )
     
-    st.plotly_chart(fig_timeline, width="stretch")
+    st.plotly_chart(fig_timeline, use_container_width=True)
 
 # Row 3: Physical characteristics vs risk
-st.subheader("🌌 Physical Characteristics Analysis")
+st.subheader("ðŸŒŒ Physical Characteristics Analysis")
 
 char_col1, char_col2 = st.columns(2)
 
@@ -344,7 +344,7 @@ with char_col1:
             xaxis_type="log",
             yaxis_type="log"
         )
-        st.plotly_chart(fig_scatter, width="stretch")
+        st.plotly_chart(fig_scatter, use_container_width=True)
 
 with char_col2:
     if "velocity_kmh" in df_filtered.columns:
@@ -358,10 +358,10 @@ with char_col2:
             box=True,
             labels={"velocity_kmh": "Velocity (km/h)", "risk_label": "Risk Level"}
         )
-        st.plotly_chart(fig_violin, width="stretch")
+        st.plotly_chart(fig_violin, use_container_width=True)
 
 # High Risk Objects Table
-st.header("⚠️ Highest Risk Objects")
+st.header("âš ï¸ Highest Risk Objects")
 
 # Select display columns
 display_cols = [
@@ -398,12 +398,12 @@ if "risk_label" in top_risks.columns:
         "miss_distance_km": "{:,.0f}",
         "velocity_kmh": "{:,.0f}"
     })
-    st.dataframe(styled_df, width="stretch", height=400)
+    st.dataframe(styled_df, use_container_width=True, height=400)
 else:
-    st.dataframe(top_risks[display_cols], width="stretch", height=400)
+    st.dataframe(top_risks[display_cols], use_container_width=True, height=400)
 
 # Model Information
-with st.expander("ℹ️ About the Models"):
+with st.expander("â„¹ï¸ About the Models"):
     st.markdown("""
     ### Risk Assessment Methodology
     
@@ -413,7 +413,7 @@ with st.expander("ℹ️ About the Models"):
     - Predicts the probability that an NEO is potentially hazardous
     - Trained on labeled NASA data with known hazard classifications
     - Considers diameter, velocity, miss distance, and orbital parameters
-    - Target accuracy: ≥85%
+    - Target accuracy: â‰¥85%
     
     **2. Isolation Forest (Anomaly Detection)**
     - Identifies unusual or extreme NEOs that don't fit normal patterns
@@ -424,19 +424,19 @@ with st.expander("ℹ️ About the Models"):
     **Combined Risk Score**
     - Weighted combination: 60% XGBoost + 40% Isolation Forest
     - Risk Labels:
-        - 🟢 **LOW**: Risk score < 0.3
-        - 🟡 **MEDIUM**: Risk score 0.3 - 0.7
-        - 🔴 **HIGH**: Risk score > 0.7
+        - ðŸŸ¢ **LOW**: Risk score < 0.3
+        - ðŸŸ¡ **MEDIUM**: Risk score 0.3 - 0.7
+        - ðŸ”´ **HIGH**: Risk score > 0.7
     
     **Data Source**: NASA Near-Earth Object Web Service (NeoWs) API
     """)
 
 # Key Terms Glossary
-with st.expander("📖 Glossary"):
+with st.expander("ðŸ“– Glossary"):
     st.markdown("""
     **Near-Earth Object (NEO)**: An asteroid or comet with an orbit that brings it within 1.3 AU of the Sun and within 0.3 AU (45 million km) of Earth
     
-    **Potentially Hazardous Asteroid (PHA)**: An NEO with a Minimum Orbit Intersection Distance (MOID) < 0.05 AU and absolute magnitude H ≤ 22.0 (diameter ≥ ~140m)
+    **Potentially Hazardous Asteroid (PHA)**: An NEO with a Minimum Orbit Intersection Distance (MOID) < 0.05 AU and absolute magnitude H â‰¤ 22.0 (diameter â‰¥ ~140m)
     
     **Miss Distance**: The closest distance the NEO will come to Earth during its approach
     
@@ -458,4 +458,4 @@ For questions or feedback, refer to your project documentation
 # Auto-refresh indicator
 placeholder = st.empty()
 with placeholder:
-    st.info(f"⏱️ Dashboard will auto-refresh in {AUTO_REFRESH_SECONDS} seconds...")
+    st.info(f"â±ï¸ Dashboard will auto-refresh in {AUTO_REFRESH_SECONDS} seconds...")
