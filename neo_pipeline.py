@@ -4,7 +4,7 @@ End-to-end NEO pipeline for Railway worker:
 2) Upsert into SQLite raw table
 3) Train/retrain XGBoost + Isolation Forest
 4) Generate predictions for dashboard
-5) Repeat every 2 hours (12 runs/day)
+5) Repeat every hour (24 runs/day)
 """
 
 import argparse
@@ -599,8 +599,8 @@ def main() -> None:
     parser.add_argument(
         "--interval-seconds",
         type=int,
-        default=int(os.getenv("PIPELINE_INTERVAL_SECONDS", "7200")),
-        help="Loop interval in seconds (default: 7200 = 2 hours)",
+        default=int(os.getenv("PIPELINE_INTERVAL_SECONDS", "3600")),
+        help="Loop interval in seconds (default: 3600 = 1 hour)",
     )
     args = parser.parse_args()
 

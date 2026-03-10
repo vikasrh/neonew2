@@ -3,6 +3,9 @@ import subprocess
 import sys
 
 
+APP_FILE = os.getenv("STREAMLIT_APP", "app.py")
+
+
 def main() -> int:
     port = os.getenv("PORT", "8501")
     command = [
@@ -10,7 +13,7 @@ def main() -> int:
         "-m",
         "streamlit",
         "run",
-        "enhanced_dashboard.py",
+        APP_FILE,
         "--server.address=0.0.0.0",
         f"--server.port={port}",
         "--server.headless=true",
