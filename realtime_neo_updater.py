@@ -38,11 +38,26 @@ DAILY_REQUEST_LIMIT = 1000
 
 XGBOOST_MODEL_PATH = "neo_hazard_model_xgb_iso.joblib"
 ISOLATION_FOREST_MODEL_PATH = "neo_isolation_forest_model.joblib"
+FEATURE_COLS = [
+    "absolute_magnitude_h",
+    "diameter_m",
+    "velocity_kms",
+    "miss_distance_km",
+]
 
 # If your pipeline uses this:
 def log1p_array(X):
     # X is a numpy array from the imputer
     return np.log1p(X)
+
+
+def _normalize_anomaly_score(raw_scores: np.ndarray) -> np.ndarray:
+    raw_scores = np.asarray(raw_scores, dtype=float)
+    mn = float(np.min(raw_scores))
+    mx = float(np.max(raw_scores))
+    if mx - mn <= 1e-12:
+        return np.zeros_like(raw_scores, dtype=float)
+    return 1.0 - ((raw_scores - mn) / (mx - mn))
 
 # ---------------------------------------------------------------------
 # API Fetcher
@@ -89,7 +104,7 @@ class NEODataFetcher:
             self.daily_request_count += 1
 
             if resp.status_code == 200:
-                logger.info(f"✓ Fetched data for {start_date} to {end_date}")
+                logger.info(f"Fetched data for {start_date} to {end_date}")
                 return resp.json()
             else:
                 logger.error(f"NASA API error {resp.status_code}: {resp.text[:200]}")
@@ -106,23 +121,45 @@ class NEOPredictor:
     def __init__(self):
         self.xgboost_model = None
         self.isolation_forest = None
+        self.xgboost_feature_cols = FEATURE_COLS.copy()
+        self.isolation_feature_cols = FEATURE_COLS.copy()
         self.load_models()
 
+    @staticmethod
+    def _infer_feature_columns(model, default_cols: list[str]) -> list[str]:
+        feature_names = getattr(model, "feature_names_in_", None)
+        if feature_names is not None:
+            return [str(col) for col in feature_names]
+        return default_cols.copy()
+
+    @staticmethod
+    def _prepare_features(df: pd.DataFrame, feature_cols: list[str]) -> pd.DataFrame:
+        x = df.reindex(columns=feature_cols, fill_value=0.0).copy()
+        for col in feature_cols:
+            x[col] = pd.to_numeric(x[col], errors="coerce").fillna(0.0)
+        return x
+
     def load_models(self) -> None:
-        """Load the trained models (as pipelines) if they exist."""
+        """Load the trained models and remember their expected feature schema."""
         try:
             if os.path.exists(XGBOOST_MODEL_PATH):
                 self.xgboost_model = joblib.load(XGBOOST_MODEL_PATH)
-                logger.info("✓ XGBoost pipeline loaded")
+                self.xgboost_feature_cols = self._infer_feature_columns(
+                    self.xgboost_model, FEATURE_COLS
+                )
+                logger.info("XGBoost pipeline loaded")
             else:
-                logger.warning(f"⚠ XGBoost model not found: {XGBOOST_MODEL_PATH}")
+                logger.warning(f"XGBoost model not found: {XGBOOST_MODEL_PATH}")
 
             if os.path.exists(ISOLATION_FOREST_MODEL_PATH):
                 self.isolation_forest = joblib.load(ISOLATION_FOREST_MODEL_PATH)
-                logger.info("✓ Isolation Forest loaded")
+                self.isolation_feature_cols = self._infer_feature_columns(
+                    self.isolation_forest, FEATURE_COLS
+                )
+                logger.info("Isolation Forest loaded")
             else:
                 logger.warning(
-                    f"⚠ Isolation Forest model not found: {ISOLATION_FOREST_MODEL_PATH}"
+                    f"Isolation Forest model not found: {ISOLATION_FOREST_MODEL_PATH}"
                 )
         except Exception as exc:
             logger.error(f"Model loading error: {exc}")
@@ -191,34 +228,49 @@ class NEOPredictor:
         if df.empty:
             return df
 
-        # If you want to use the real model, plug the right feature list here.
+        xgb_prob = None
+        iso_score = None
+        is_anomaly = None
+
         if self.xgboost_model is not None:
-            # Example feature list – adjust to match how you trained
-            feature_cols = [
-                "absolute_magnitude_h",
-                "diameter_m",
-                "diameter_min_m",
-                "diameter_max_m",
-                "velocity_kmh",
-                "velocity_kms",
-                "miss_distance_km",
-                "hazardous",
-            ]
-            X = df[feature_cols]
             try:
-                proba = self.xgboost_model.predict_proba(X)[:, 1]
-                df["risk_score"] = proba
+                x = self._prepare_features(df, self.xgboost_feature_cols)
+                xgb_prob = self.xgboost_model.predict_proba(x)[:, 1].astype(float)
             except Exception as exc:
                 logger.error(f"Error using XGBoost model, falling back: {exc}")
                 self.xgboost_model = None
 
-        if self.xgboost_model is None:
-            # Fallback rule-based risk
+        if self.isolation_forest is not None:
+            try:
+                x_iso = self._prepare_features(df, self.isolation_feature_cols)
+                iso_raw = self.isolation_forest.score_samples(x_iso)
+                iso_score = _normalize_anomaly_score(iso_raw)
+                is_anomaly = (self.isolation_forest.predict(x_iso) == -1).astype(int)
+            except Exception as exc:
+                logger.warning(
+                    f"Isolation Forest inference failed, skipping anomaly score: {exc}"
+                )
+                self.isolation_forest = None
+
+        if xgb_prob is not None and iso_score is not None:
+            df["risk_score"] = np.clip(0.6 * xgb_prob + 0.4 * iso_score, 0.0, 1.0)
+        elif xgb_prob is not None:
+            df["risk_score"] = np.clip(xgb_prob, 0.0, 1.0)
+        elif iso_score is not None:
+            df["risk_score"] = np.clip(iso_score, 0.0, 1.0)
+        else:
             df["risk_score"] = (
                 (df["diameter_m"] > 140).astype(float) * 0.4
                 + (df["velocity_kms"] > 15).astype(float) * 0.3
                 + (df["miss_distance_km"] < 7_480_000).astype(float) * 0.3
             )
+
+        if xgb_prob is not None:
+            df["xgb_risk_prob"] = xgb_prob
+        if iso_score is not None:
+            df["isolation_anomaly_score"] = iso_score
+        if is_anomaly is not None:
+            df["is_anomaly"] = is_anomaly
 
         df["risk_label"] = pd.cut(
             df["risk_score"],
@@ -265,7 +317,7 @@ class DatabaseManager:
                 """
             )
             conn.commit()
-        logger.info("✓ Database initialized")
+        logger.info("Database initialized")
 
     def get_last_fetch_date(self) -> Optional[str]:
         with sqlite3.connect(self.db_path) as conn:
@@ -312,7 +364,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-        logger.info(f"✓ Saved {len(df_save)} predictions")
+        logger.info(f"Saved {len(df_save)} predictions")
 
 
 # ---------------------------------------------------------------------
@@ -373,7 +425,7 @@ def main() -> None:
             time.sleep(UPDATE_INTERVAL)
 
         except KeyboardInterrupt:
-            logger.info("\n✓ Shutting down gracefully...")
+            logger.info("\nShutting down gracefully...")
             break
         except Exception as exc:
             logger.error(f"Error in main loop: {exc}", exc_info=True)
@@ -382,3 +434,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
